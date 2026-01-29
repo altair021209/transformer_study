@@ -163,3 +163,92 @@ $$FFN(x) = \text{ReLU}(x W_1 + b_1) W_2 + b_2$$
 * **Mapping (Expansion):** 512차원 $\to$ 2048차원.
 * **Activation (ReLU):** 비선형성을 부여하여 꼬여있는 데이터의 **매니폴드(Manifold)**를 펴줍니다.
 * **Projection (Compression):** 2048차원
+
+
+
+## 2. Decoder Layer
+
+**입력 (Inputs):**
+* **$X_{dec} \in \mathbb{R}^{B \times L_{dec} \times d}$**: Target 문장의 임베딩 (Shifted Right, 즉 `<sos>`로 시작).
+* **$X_{enc} \in \mathbb{R}^{B \times L_{enc} \times d}$**: Encoder가 처리를 마친 Source 문장의 문맥 정보 (Key, Value 제공용).
+
+### 2-1. Masked Self Attention
+Encoder의 Self Attention과 메커니즘은 같지만, **인과성(Causality)**을 지키기 위해 미래 정보를 물리적으로 차단합니다.
+
+* **Operation:**
+    $$M_{score} = \frac{Q_{dec} K_{dec}^T}{\sqrt{d_k}} + \text{Mask}$$
+    * **Mask:** Score Map의 우상단(Upper Triangle)에 $-\infty$를 더해줍니다.
+* **Dimensions:**
+    * Score Map: `(B, L_dec, L_dec)` (정사각형 행렬)
+* **[선형대수적 관점]**
+    * **Subspace Restriction (공간 제약):** $t$시점의 Query 벡터가 $t+1$ 이후의 Key 벡터들과 내적했을 때, 그 값을 강제로 음의 무한대로 보냅니다.
+    * Softmax를 통과하면 $e^{-\infty} \to 0$이 되므로, 미래 시점의 기저(Basis)와는 **직교(Orthogonal, 관계없음)** 상태가 되도록 강제하여 정보의 흐름을 차단합니다.
+
+### 2-2. Cross Attention (Encoder-Decoder Attention)
+서로 다른 두 벡터 공간(Source & Target)을 연결하는 **다리(Bridge)** 역할을 합니다.
+
+* **Linear Projection:**
+    * **Query (from Decoder):** $Q = X_{dec} W_Q$ $\rightarrow$ "현재 번역할 위치에서 내가 궁금한 정보는..."
+    * **Key (from Encoder):** $K = X_{enc} W_K$ $\rightarrow$ "원본 문장이 가진 정보들의 인덱스(Key)는..."
+    * **Value (from Encoder):** $V = X_{enc} W_V$ $\rightarrow$ "원본 문장의 실제 의미(Value)는..."
+* **Operation (Alignment & Mixing):**
+    $$Context = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V$$
+* **Dimensions:**
+    * $Q$: `(B, L_dec, d_k)`
+    * $K^T$: `(B, d_k, L_enc)`
+    * **Score Map ($QK^T$):** **`(B, L_dec, L_enc)`** $\rightarrow$ 디코더의 각 단어(행)가 인코더의 어떤 단어(열)와 연관되는지를 나타내는 직사각형 맵.
+* **[선형대수적 관점]**
+    * **Basis Mapping:** Target 언어 공간에 있는 벡터($Q$)를 Source 언어 공간($K, V$)에 투영하여, 가장 유사한 방향(**Alignment**)을 찾습니다.
+    * **Injection:** 찾아낸 Source의 정보($V$)를 가중합(Weighted Sum)하여 Decoder의 벡터 공간으로 **주입(Injection)**합니다. 즉, 번역에 필요한 힌트를 원문 공간에서 가져와 현재 공간에 섞는 과정입니다.
+
+### 2-3. Position-wise FFN
+Cross Attention을 통해 외부 정보를 흡수한 뒤, 이를 현재 문맥에 맞게 정제합니다.
+
+* **Operation:**
+    $$FFN(x) = \text{ReLU}(x W_1 + b_1) W_2 + b_2$$
+* **[선형대수적 관점]**
+    * 외부(Encoder)에서 가져온 정보와 내부(Decoder) 정보가 섞인 벡터를, 고차원으로 보냈다가($W_1$) 다시 압축($W_2$)하면서 **매니폴드(Manifold)를 매끄럽게 정리**하는 단계입니다.
+
+---
+
+## 3. Output Projection & Validation
+
+### 3-1. Final Linear Layer (Projection to Vocab)
+모델의 내부 차원($d=512$)을 단어 집합의 크기($V \approx 30,000$)로 확장합니다.
+
+* **Operation:**
+    $$Z = X_{final} W_{vocab}^T$$
+* **Dimensions:**
+    * $X_{final}$: `(B, L_dec, 512)`
+    * $W_{vocab}^T$: `(512, V)`
+    * **Logits ($Z$):** **`(B, L_dec, V)`**
+* **[선형대수적 관점]**
+    * **Similarity Check:** 디코더가 만든 최종 벡터($X_{final}$)와 단어장 내의 **모든 단어 임베딩 벡터($W_{vocab}$의 행들)** 간의 **내적(Dot Product)**을 한 번에 수행합니다.
+    * 내적 값이 클수록 두 벡터의 방향이 비슷하다는 뜻이며, 이는 곧 해당 단어일 확률이 높다는 것을 의미합니다. (Cosine Similarity와 유사)
+
+### 3-2. Softmax & Label Smoothing
+확률 분포를 만들고, 정답지와의 오차를 계산할 준비를 합니다.
+
+* **Label Smoothing (정답지 수정):**
+    * Hard Label (One-hot): $y = [0, 1, 0, \dots]$
+    * Soft Label: $y_{ls} = [0.01, 0.9, 0.01, \dots]$
+    * **이유:** 정답 벡터가 너무 뾰족하면(Impulse), 모델이 무한히 큰 가중치를 가지려 합니다(**Overconfidence**). 이를 방지해 벡터 공간상에서 무리하게 찢어지는 것을 막고 **일반화 성능**을 높입니다.
+* **Softmax:**
+    $$P(y_i) = \frac{e^{z_i}}{\sum_{j} e^{z_j}}$$
+    * Logits 벡터를 **확률 심플렉스(Probability Simplex, 합이 1인 공간)**로 투영합니다.
+
+### 3-3. Loss Calculation (Cross Entropy)
+예측된 분포 $P$와 실제 분포 $y_{ls}$ 사이의 거리를 측정합니다.
+
+* **Formula:**
+    $$Loss = - \sum_{i=1}^{V} y_{ls}^{(i)} \log(P^{(i)})$$
+* **[선형대수/통계적 관점]**
+    * **KL-Divergence:** 두 확률 분포(모델의 예측 vs 실제 정답)가 정보 이론적으로 얼마나 다른지를 측정하는 **거리 함수(Distance Metric)**입니다.
+    * 이 값이 0이 되도록(두 분포가 완벽하게 겹치도록) 만드는 것이 학습의 목표입니다.
+
+### 3-4. Backpropagation & Optimizer
+* **Gradient Descent:**
+    $$\theta_{new} = \theta_{old} - \eta \cdot \nabla_{\theta} Loss$$
+* **[기하학적 관점]**
+    * 수억 차원의 파라미터 공간(Hyperspace)에 존재하는 **Loss Surface(오차 지형)**에서, 현재 위치의 기울기(Gradient)를 따라 가장 낮은 계곡(Global Minimum)으로 **하강(Descent)**하는 과정입니다.
+    * 이때 **Adam** Optimizer는 관성(Momentum)과 적응형 보폭(Adaptive Rate)을 이용해, 좁은 골짜기나 평평한 구간(Plateau)을 효율적으로 탈출하여 최적해에 도달합니다.
