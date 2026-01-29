@@ -85,16 +85,14 @@ $$
 
 이를 행렬 형태로 시각화하면 다음과 같습니다.
 
-$$
-P = 
+$$P = 
 \begin{bmatrix}
 \sin(\omega_0 \cdot 0) & \cos(\omega_0 \cdot 0) & \dots & \sin(\omega_{\frac{d}{2}-1} \cdot 0) & \cos(\omega_{\frac{d}{2}-1} \cdot 0) \\
 \sin(\omega_0 \cdot 1) & \cos(\omega_0 \cdot 1) & \dots & \sin(\omega_{\frac{d}{2}-1} \cdot 1) & \cos(\omega_{\frac{d}{2}-1} \cdot 1) \\
 \vdots & \vdots & \ddots & \vdots & \vdots \\
 \sin(\omega_0 \cdot t) & \cos(\omega_0 \cdot t) & \dots & \sin(\omega_{\frac{d}{2}-1} \cdot t) & \cos(\omega_{\frac{d}{2}-1} \cdot t) \\
 \vdots & \vdots & \ddots & \vdots & \vdots 
-\end{bmatrix}
-$$
+\end{bmatrix}$$
 
 * **좌측 열 (저주파):** $\omega$가 큼. 파장이 매우 길어서 천천히 변함. (전체 숲을 보는 위치 정보)
 * **우측 열 (고주파):** $\omega$가 작음. 파장이 짧아서 빠르게 변함. (나무를 보는 세밀한 위치 정보)
