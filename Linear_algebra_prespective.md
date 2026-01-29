@@ -60,6 +60,77 @@ $$X_{final} = X_{input} \oplus PE$$
 * **Mapping:** 위치 정보(Index)를 삼각함수를 이용해 고유한 벡터로 변환합니다.
 * **Element-wise Sum:** 위치 정보와 의미 정보를 서로 다른 부분 공간(Subspace)에 중첩(Superposition) 시킵니다.
 
+* ### 0-3. Positional Encoding: Matrix Formulation & Linear Algebra View
+
+위치 정보가 없는 벡터 공간에 순서를 부여하기 위해, **고유한 패턴을 가진 상수 행렬 $P$**를 입력 행렬 $X$에 더합니다.
+
+#### 1. 행렬 연산 정의 (Matrix Operation)
+$$X_{final} = X_{embedding} + P$$
+
+* **$X_{embedding}$:** `(L, d)` 크기의 학습 가능한 임베딩 행렬.
+* **$P$:** `(L, d)` 크기의 **고정된(Fixed) 위치 인코딩 행렬**.
+
+#### 2. 행렬 $P$의 내부 구조 (Construction)
+행렬 $P$의 $pos$번째 행(Row), $i$번째 열(Column)의 원소는 다음과 같이 정의됩니다.
+
+$$
+P \in \mathbb{R}^{L \times d}
+$$
+
+이 행렬은 **짝수 열(Even columns)**에는 사인(Sin) 파형을, **홀수 열(Odd columns)**에는 코사인(Cos) 파형을 채워 넣습니다.
+
+* **각속도 (Angular Frequency):** $\omega_k = \frac{1}{10000^{2k/d}}$
+    * $pos$: 문장 내 위치 인덱스 ($0, 1, \dots, L-1$)
+    * $k$: 차원 인덱스 ($0, 1, \dots, d/2-1$)
+
+이를 행렬 형태로 시각화하면 다음과 같습니다.
+
+$$
+P = 
+\begin{bmatrix}
+\sin(\omega_0 \cdot 0) & \cos(\omega_0 \cdot 0) & \dots & \sin(\omega_{\frac{d}{2}-1} \cdot 0) & \cos(\omega_{\frac{d}{2}-1} \cdot 0) \\
+\sin(\omega_0 \cdot 1) & \cos(\omega_0 \cdot 1) & \dots & \sin(\omega_{\frac{d}{2}-1} \cdot 1) & \cos(\omega_{\frac{d}{2}-1} \cdot 1) \\
+\vdots & \vdots & \ddots & \vdots & \vdots \\
+\sin(\omega_0 \cdot t) & \cos(\omega_0 \cdot t) & \dots & \sin(\omega_{\frac{d}{2}-1} \cdot t) & \cos(\omega_{\frac{d}{2}-1} \cdot t) \\
+\vdots & \vdots & \ddots & \vdots & \vdots 
+\end{bmatrix}
+$$
+
+* **좌측 열 (저주파):** $\omega$가 큼. 파장이 매우 길어서 천천히 변함. (전체 숲을 보는 위치 정보)
+* **우측 열 (고주파):** $\omega$가 작음. 파장이 짧아서 빠르게 변함. (나무를 보는 세밀한 위치 정보)
+
+#### 3. 선형대수적 의미: 회전 변환 (Rotation Transformation)
+
+왜 하필 `sin`, `cos`을 섞어서 쓸까요? 이것은 **상대적 위치(Relative Position)**를 **선형 변환(Linear Transformation)**으로 표현하기 위해서입니다.
+
+
+
+임의의 차원 쌍 $(2k, 2k+1)$을 묶어서 하나의 **2차원 부분 공간(2D Subspace)**으로 생각해보겠습니다.
+위치 $t$에서의 벡터는 $(\sin(\omega_k t), \cos(\omega_k t))$ 입니다.
+
+이때, $t$에서 $\phi$만큼 떨어진 위치 $t+\phi$의 벡터는 다음과 같이 표현됩니다.
+
+$$
+\begin{bmatrix}
+\sin(\omega_k (t+\phi)) \\
+\cos(\omega_k (t+\phi))
+\end{bmatrix}
+=
+\begin{bmatrix}
+\cos(\omega_k \phi) & \sin(\omega_k \phi) \\
+-\sin(\omega_k \phi) & \cos(\omega_k \phi)
+\end{bmatrix}
+\begin{bmatrix}
+\sin(\omega_k t) \\
+\cos(\omega_k t)
+\end{bmatrix}
+$$
+
+$$P_{(t+\phi)} = R_{\phi} \cdot P_{(t)}$$
+
+* **핵심 통찰:** 어떤 위치 $t$의 벡터에 **회전 행렬(Rotation Matrix) $R_{\phi}$**를 곱하기만 하면, $\phi$만큼 떨어진 위치의 정보를 **선형적으로** 만들어낼 수 있습니다.
+* **결론:** 모델(Attention)이 단순한 행렬 곱셈(Linear Layer)만으로도 **"아, 이 단어는 저 단어보다 3칸 뒤에 있구나"**라는 상대적 거리를 기하학적으로 학습할 수 있게 됩니다.
+
 ---
 
 ## 3. Encoder Layer
