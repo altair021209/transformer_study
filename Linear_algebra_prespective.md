@@ -113,16 +113,14 @@ $$
 \sin(\omega_k (t+\phi)) \\
 \cos(\omega_k (t+\phi))
 \end{bmatrix}
-=
-\begin{bmatrix}
+=\begin{bmatrix}
 \cos(\omega_k \phi) & \sin(\omega_k \phi) \\
 -\sin(\omega_k \phi) & \cos(\omega_k \phi)
 \end{bmatrix}
 \begin{bmatrix}
 \sin(\omega_k t) \\
 \cos(\omega_k t)
-\end{bmatrix}
-$$
+\end{bmatrix}$$
 
 $$P_{(t+\phi)} = R_{\phi} \cdot P_{(t)}$$
 
